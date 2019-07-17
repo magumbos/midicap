@@ -73,19 +73,12 @@ bool volatile buttonFlag = false;
 string doublePressCommand = "sync && reboot now &";
 string longPressCommand = "sync && halt &";
 
-/*
-string singlePressCommand = "echo \"Hello World!\" &";
-string doublePressCommand = "echo \"Double Press\" &";
-string longPressCommand = "echo \"long Press\" &";
-* */
-
  
 int zlimit = 150; //sensitvity value for midi conversion. Bigger number less sensitivity.
-int sensorNo = 11; //Sensor Number (range 0 to 11)
-int updateDelay = VOLUME_INSTRUMENT_DELAY; //How long to wait to update next midi MS
-bool sound = false; //just incase we want to shut the machine up;
-int prvMidi = 0;//no point sending midi commands of the same number;
-int volumeInstrument[] = {49, 50, 51, 82, 83}; //all the instruments we want to use
+int sensorNo = 11; 
+int updateDelay = VOLUME_INSTRUMENT_DELAY;
+bool sound = false;
+int prvMidi = 0;
 unsigned int instrumentNo = 0;
 int PROG = 1;
 int T_PROG = 2;
@@ -93,9 +86,17 @@ int elecTouch[12];
 bool touched[12];
 int a;
 
-using namespace std;
-
 bool volatile keepRunning = true;
+
+//forward defined fucntions for button press and ctrl+c
+void singlePress();
+void doublePress();
+void longPress();
+void alarmHandler(int dummy);
+void buttonIsr(void);
+void buttonPress(void);
+void intHandler(int dummy);
+
 
 void led(int r, int g, int b) {
   // we are inverting the values, because the LED is active LOW
@@ -110,134 +111,6 @@ void allNotesOff(void)
 {
 cout << "cc 0 123 0" << endl;
 sound = false;
-}
-
-void toggleInstrument(void)
-{
-led(0, 0, 1);
-allNotesOff();
-instrumentNo++;
-if(instrumentNo > ((sizeof(volumeInstrument)/sizeof(volumeInstrument[0]))-1)) instrumentNo = 0;
-cout << "prog 0 " << volumeInstrument[instrumentNo]<< endl;
-delay(250);
-led(1, 0, 0);
-}
-
-void singlePress() {
-  // single press event handler
-  allNotesOff();
-  PROG++;
-  if(PROG>T_PROG) PROG = 1;
-  
-  switch(PROG)
-  {
-    case VOLUME_INSTRUMENT:
-    updateDelay = VOLUME_INSTRUMENT_DELAY;
-    toggleInstrument();
-    break;
-    
-    case PERCUSSION:
-    updateDelay = PERCUSSION_DELAY;
-    break;
-  }
-  
-}
-
-void doublePress() {
-  // double press event handler
-  system(doublePressCommand.c_str());
-}
-
-void longPress() {
-  // long press event handler
-  system(longPressCommand.c_str());
-}
-
-void alarmHandler(int dummy) {
-  // time-based part of state machine
-  switch (action) {
-    case NONE:
-      break;
-    case SINGLE_PRESS:
-      singlePress(); // call the single press event handler
-      action = NONE;
-      state = IDLE;
-      break;
-    case LONG_PRESS:
-      longPress(); // call the long press event handler
-      action = NONE;
-      state = IDLE;
-      break;
-    default:
-      break;
-  }
-}
-
-void buttonIsr(void) {
-  // event based part of state machine
-  if(isrEnabled) buttonFlag = true; // set the ISR flag, but only if our soft-gate is enabled
-}
-
-
-
-void buttonPress(void)
-{
-        if (!digitalRead(BUTTON_PIN)) {
-        // button just pressed
-        led(0, 0, 0);
-        delay(10);
-        led(1,0,0);
-        
-        switch (state) {
-          case IDLE:
-            // disable the button ISR, set state to pressed and set long press timeout
-            isrEnabled = false;
-            state = PRESSED;
-            action = LONG_PRESS; // what we'll do if we time out in this state...
-            ualarm(LONGPRESS_TIMEOUT_US,0);
-            // delay a bit to avoid erroneous double-presses from switch bounce
-            usleep(DEBOUNCE_LOCKOUT_MS);
-            // re-enable the ISR once we're clear of switch bounce
-            isrEnabled = true;
-            break;
-          case RELEASED:
-            // if we get another press when the switch has been released (and before
-            // the double-press timeout has occured) we have a double-press
-            // so reset the state machine
-            action = NONE;
-            state = IDLE;
-            doublePress(); // call the double press event handler
-            break;
-          default:
-            break;
-        }
-      }
-      else {
-        // button just released
-        switch (state) {
-          case PRESSED:
-            // disable the button ISR, set state to released and set double press timeout
-            isrEnabled = false;
-            action = SINGLE_PRESS; // what we'll do if we timeout in this state
-            ualarm(DOUBLEPRESS_TIMEOUT_US,0);
-            // delay a bit to avoid erroneous double-presses from switch bounce
-            usleep(DEBOUNCE_LOCKOUT_MS);
-            state = RELEASED;
-            // re-enable the ISR once we're clear of switch bounce
-            isrEnabled = true;
-            break;
-          default:
-            break;
-        }
-      }
-
-      buttonFlag = false;
-}
-
-// this allows us to exit the program via Ctrl+C while still exiting elegantly
-void intHandler(int dummy) {
-  keepRunning = false;
-  exit(0);
 }
 
 
@@ -273,7 +146,6 @@ void toggleSound(void)
   
   sound = !sound;
 }
-
 
 
 int main(void) {
@@ -323,6 +195,7 @@ int main(void) {
   //next 4 settings are just for touching pin 0 to start and stop sounds
   // this is the touch threshold - setting it low makes it more like a proximity trigger
   int touchThreshold = 40;
+  
   // this is the release threshold - must ALWAYS be smaller than the touch threshold
   int releaseThreshold = 20;
   
@@ -330,16 +203,16 @@ int main(void) {
   MPR121.setReleaseThreshold(releaseThreshold);
   
   
-  //Set Instrument
-  toggleInstrument();
-  
-  
   // set up LED
   pinMode(RED_LED_PIN, OUTPUT);
   pinMode(GREEN_LED_PIN, OUTPUT);
   pinMode(BLUE_LED_PIN, OUTPUT);
+  
   //tell the world we are awake
+  delay(2000); //wait for the synth to wake up
   led(1, 0, 0);
+  
+   singlePress(); //set up percussion to start
   
  
   
@@ -415,4 +288,122 @@ int main(void) {
 
   // make sure we return gracefully
   return(0);
+}
+
+/*--------- The button Press commands & Ctr+C -------*/
+void singlePress() {
+  // single press event handler
+  allNotesOff();
+  PROG++;
+  if(PROG>T_PROG) PROG = 1;
+  
+  switch(PROG)
+  {
+    case VOLUME_INSTRUMENT:
+    updateDelay = VOLUME_INSTRUMENT_DELAY;
+    cout << "prog 0 50" << endl;
+    break;
+    
+    case PERCUSSION:
+    updateDelay = PERCUSSION_DELAY;
+    break;
+  }
+  
+}
+
+void doublePress() {
+  // double press event handler
+  system(doublePressCommand.c_str());
+}
+
+void longPress() {
+  // long press event handler
+  system(longPressCommand.c_str());
+}
+
+void alarmHandler(int dummy) {
+  // time-based part of state machine
+  switch (action) {
+    case NONE:
+      break;
+    case SINGLE_PRESS:
+      singlePress(); // call the single press event handler
+      action = NONE;
+      state = IDLE;
+      break;
+    case LONG_PRESS:
+      longPress(); // call the long press event handler
+      action = NONE;
+      state = IDLE;
+      break;
+    default:
+      break;
+  }
+}
+
+void buttonIsr(void) {
+  // event based part of state machine
+  if(isrEnabled) buttonFlag = true; // set the ISR flag, but only if our soft-gate is enabled
+}
+
+
+
+void buttonPress(void)
+{
+        if (!digitalRead(BUTTON_PIN)) {
+        // button just pressed
+        led(0, 0, 0);
+        delay(100);
+        led(1,0,0);
+        
+        switch (state) {
+          case IDLE:
+            // disable the button ISR, set state to pressed and set long press timeout
+            isrEnabled = false;
+            state = PRESSED;
+            action = LONG_PRESS; // what we'll do if we time out in this state...
+            ualarm(LONGPRESS_TIMEOUT_US,0);
+            // delay a bit to avoid erroneous double-presses from switch bounce
+            usleep(DEBOUNCE_LOCKOUT_MS);
+            // re-enable the ISR once we're clear of switch bounce
+            isrEnabled = true;
+            break;
+          case RELEASED:
+            // if we get another press when the switch has been released (and before
+            // the double-press timeout has occured) we have a double-press
+            // so reset the state machine
+            action = NONE;
+            state = IDLE;
+            doublePress(); // call the double press event handler
+            break;
+          default:
+            break;
+        }
+      }
+      else {
+        // button just released
+        switch (state) {
+          case PRESSED:
+            // disable the button ISR, set state to released and set double press timeout
+            isrEnabled = false;
+            action = SINGLE_PRESS; // what we'll do if we timeout in this state
+            ualarm(DOUBLEPRESS_TIMEOUT_US,0);
+            // delay a bit to avoid erroneous double-presses from switch bounce
+            usleep(DEBOUNCE_LOCKOUT_MS);
+            state = RELEASED;
+            // re-enable the ISR once we're clear of switch bounce
+            isrEnabled = true;
+            break;
+          default:
+            break;
+        }
+      }
+
+      buttonFlag = false;
+}
+
+// this allows us to exit the program via Ctrl+C while still exiting elegantly
+void intHandler(int dummy) {
+  keepRunning = false;
+  exit(0);
 }
