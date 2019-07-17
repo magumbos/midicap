@@ -58,8 +58,10 @@ using namespace std;
 
 #define VOLUME_INSTRUMENT 1
 #define PERCUSSION 2
-#define VOLUME_INSTRUMENT_DELAY 50;
+#define PIANO 3
+#define VOLUME_INSTRUMENT_DELAY 50; 
 #define PERCUSSION_DELAY 100;
+#define PIANO_DELAY 100;
 
 // enums and variables for state and timeout action
 enum state_t {IDLE, PRESSED, RELEASED};
@@ -81,7 +83,7 @@ bool sound = false;
 int prvMidi = 0;
 unsigned int instrumentNo = 0;
 int PROG = 1;
-int T_PROG = 2;
+int T_PROG = 3;
 int elecTouch[12];
 bool touched[12];
 int a;
@@ -242,12 +244,6 @@ int main(void) {
           toggleSound();
           elecTouch[0] = 0;
         }
-    
-        if(MPR121.getTouchData(3) && elecTouch[0]>updateDelay)
-        {
-          toggleSound();
-          elecTouch[3] = 0;
-        }
         
         if(sound)
         {
@@ -280,6 +276,25 @@ int main(void) {
       }
       break;
       
+      case PIANO:
+      
+      for (int a = 0; a < NUM_ELECTRODES; a++) {
+        if (elecTouch[a]>updateDelay)
+        {
+          if(touched[a] == false && MPR121.getFilteredData(a)<500)
+          {
+            touched[a] = true;
+            cout << "noteon 0 " << 71-a << " 100" << endl;
+          }
+          else if (touched[a] == true && MPR121.getFilteredData(a)>500)
+          {
+            touched[a] = false;         
+            cout << "noteoff 0 " << 71-a << " 100" << endl;
+          }
+        }
+      }
+      break;
+      
     }
     
     delay(10);
@@ -306,6 +321,11 @@ void singlePress() {
     
     case PERCUSSION:
     updateDelay = PERCUSSION_DELAY;
+    break;
+    
+    case PIANO:
+    updateDelay = PIANO_DELAY;
+    cout << "prog 0 0" << endl;
     break;
   }
   
