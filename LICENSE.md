@@ -1,3 +1,6 @@
+Bare Conductive License for use of their software
+
+
 MIT License
 
 Copyright (c) 2016 Bare Conductive
