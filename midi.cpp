@@ -59,9 +59,9 @@ using namespace std;
 #define VOLUME_INSTRUMENT 1
 #define PERCUSSION 2
 #define PIANO 3
-#define VOLUME_INSTRUMENT_DELAY 50; 
-#define PERCUSSION_DELAY 100;
-#define PIANO_DELAY 100;
+#define UPDATE_DELAY 50000 //nanoseconds
+#define TOUCH_SENSOR 500
+
 
 // enums and variables for state and timeout action
 enum state_t {IDLE, PRESSED, RELEASED};
@@ -78,13 +78,11 @@ string longPressCommand = "sync && halt &";
  
 int zlimit = 150; //sensitvity value for midi conversion. Bigger number less sensitivity.
 int sensorNo = 11; 
-int updateDelay = VOLUME_INSTRUMENT_DELAY;
 bool sound = false;
 int prvMidi = 0;
 unsigned int instrumentNo = 0;
 int PROG = 1;
 int T_PROG = 3;
-int elecTouch[12];
 bool touched[12];
 int a;
 
@@ -149,6 +147,69 @@ void toggleSound(void)
   sound = !sound;
 }
 
+void makeMusic(void)
+{
+  switch(PROG)
+      {
+        case VOLUME_INSTRUMENT:
+   
+          if(MPR121.getFilteredData(a)<TOUCH_DELAY)
+          {
+            toggleSound();
+          }
+          
+          if(sound)
+          {
+          int midi = midiSort(MPR121.getBaselineData(sensorNo), MPR121.getFilteredData(sensorNo));
+          if(midi!=prvMidi)
+            {
+            cout << "cc 0 11 ";
+            cout << midi << endl;
+            prvMidi = midi; 
+            }
+          }
+        break;
+        
+        case PERCUSSION:
+        
+        for (int a = 0; a < NUM_ELECTRODES; a++) 
+        {
+            if(touched[a] == false && MPR121.getFilteredData(a)<TOUCH_SENSOR)
+            {
+              touched[a] = true;
+              cout << "noteon 9 " << 71-a*3 << " 100" << endl;
+            }
+            else if (touched[a] == true && MPR121.getFilteredData(a)>500)
+            {
+              touched[a] = false;         
+              cout << "noteoff 9 " << 71-a*3 << " 100" << endl;
+            }
+          }
+        break;
+        
+        case PIANO:
+        
+        for (int a = 0; a < NUM_ELECTRODES; a++) 
+        {
+
+            if(touched[a] == false && MPR121.getFilteredData(a)<500)
+            {
+              touched[a] = true;
+              cout << "noteon 0 " << 71-a << " 100" << endl;
+            }
+            else if (touched[a] == true && MPR121.getFilteredData(a)>500)
+            {
+              touched[a] = false;         
+              cout << "noteoff 0 " << 71-a << " 100" << endl;
+            }
+        }
+        break;
+        
+      }
+      
+      
+    ualarm(UPDATE_DELAY, 0); 
+  }
 
 int main(void) {
   // register our interrupt handler for the Ctrl+C signal
@@ -156,6 +217,7 @@ int main(void) {
   
   // register our interrupt handler for button press
   signal(SIGALRM, alarmHandler);
+  
   wiringPiSetup();
   
   // button pin is input, pulled up, linked to a dual-edge interrupt
@@ -214,7 +276,9 @@ int main(void) {
   delay(2000); //wait for the synth to wake up
   led(1, 0, 0);
   
-   singlePress(); //set up percussion to start
+  singlePress(); //set up percussion to start
+  
+  ualarm(UPDATE_DELAY, 0); //set interupt touch cycles to make music
   
  
   
@@ -222,85 +286,16 @@ int main(void) {
     
     if (buttonFlag) buttonPress();
     
-       if (MPR121.touchStatusChanged()) {
+    if (MPR121.touchStatusChanged()) {
       MPR121.updateTouchData();
     }
-
+    
     MPR121.updateBaselineData();
     MPR121.updateFilteredData();
-    
-    //simple over touch calculator
-    for (int i = 0; i < NUM_ELECTRODES; i++) {
-      elecTouch[i]+=10;
-      if(elecTouch[i]>20000) elecTouch[i]=500; //just incase we never reset
-    }
-    
-    switch(PROG)
-    {
-      case VOLUME_INSTRUMENT:
- 
-        if(MPR121.getTouchData(0) && elecTouch[0]>updateDelay)
-        {
-          toggleSound();
-          elecTouch[0] = 0;
-        }
-        
-        if(sound)
-        {
-        int midi = midiSort(MPR121.getBaselineData(sensorNo), MPR121.getFilteredData(sensorNo));
-        if(midi!=prvMidi)
-          {
-          cout << "cc 0 11 ";
-          cout << midi << endl;
-          prvMidi = midi; 
-          }
-        }
-      break;
-      
-      case PERCUSSION:
-      
-      for (int a = 0; a < NUM_ELECTRODES; a++) {
-        if (elecTouch[a]>updateDelay)
-        {
-          if(touched[a] == false && MPR121.getFilteredData(a)<500)
-          {
-            touched[a] = true;
-            cout << "noteon 9 " << 71-a*3 << " 100" << endl;
-          }
-          else if (touched[a] == true && MPR121.getFilteredData(a)>500)
-          {
-            touched[a] = false;         
-            cout << "noteoff 9 " << 71-a*3 << " 100" << endl;
-          }
-        }
-      }
-      break;
-      
-      case PIANO:
-      
-      for (int a = 0; a < NUM_ELECTRODES; a++) {
-        if (elecTouch[a]>updateDelay)
-        {
-          if(touched[a] == false && MPR121.getFilteredData(a)<500)
-          {
-            touched[a] = true;
-            cout << "noteon 0 " << 71-a << " 100" << endl;
-          }
-          else if (touched[a] == true && MPR121.getFilteredData(a)>500)
-          {
-            touched[a] = false;         
-            cout << "noteoff 0 " << 71-a << " 100" << endl;
-          }
-        }
-      }
-      break;
-      
-    }
-    
+
     delay(10);
     
   }
-
   // make sure we return gracefully
   return(0);
 }
@@ -315,16 +310,13 @@ void singlePress() {
   switch(PROG)
   {
     case VOLUME_INSTRUMENT:
-    updateDelay = VOLUME_INSTRUMENT_DELAY;
     cout << "prog 0 50" << endl;
     break;
     
     case PERCUSSION:
-    updateDelay = PERCUSSION_DELAY;
     break;
     
     case PIANO:
-    updateDelay = PIANO_DELAY;
     cout << "prog 0 0" << endl;
     break;
   }
@@ -343,6 +335,7 @@ void longPress() {
 
 void alarmHandler(int dummy) {
   // time-based part of state machine
+
   switch (action) {
     case NONE:
       break;
@@ -359,6 +352,8 @@ void alarmHandler(int dummy) {
     default:
       break;
   }
+  
+  makeMusic();
 }
 
 void buttonIsr(void) {
