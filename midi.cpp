@@ -153,7 +153,7 @@ void makeMusic(void)
       {
         case VOLUME_INSTRUMENT:
    
-          if(MPR121.getFilteredData(a)<TOUCH_DELAY)
+          if(MPR121.getFilteredData(a)<TOUCH_SENSOR)
           {
             toggleSound();
           }
@@ -208,7 +208,7 @@ void makeMusic(void)
       }
       
       
-    ualarm(UPDATE_DELAY, 0); 
+    //ualarm(UPDATE_DELAY, 0); 
   }
 
 int main(void) {
@@ -273,12 +273,12 @@ int main(void) {
   pinMode(BLUE_LED_PIN, OUTPUT);
   
   //tell the world we are awake
-  delay(2000); //wait for the synth to wake up
+  delay(5000); //wait for the synth to wake up
   led(1, 0, 0);
   
   singlePress(); //set up percussion to start
   
-  ualarm(UPDATE_DELAY, 0); //set interupt touch cycles to make music
+  //ualarm(UPDATE_DELAY, 0); //set interupt touch cycles to make music
   
  
   
@@ -292,6 +292,8 @@ int main(void) {
     
     MPR121.updateBaselineData();
     MPR121.updateFilteredData();
+    
+    makeMusic();
 
     delay(10);
     
